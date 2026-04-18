@@ -1,0 +1,35 @@
+[
+  {
+    "id": "v1-offline",
+    "version": "v1",
+    "title": "離線單頁版",
+    "description": "單一 HTML 檔案，掃描槍直接輸入，localStorage 持久化，支援匯出 xlsx 或複製貼到 Excel。",
+    "stack": ["HTML", "JavaScript", "SheetJS", "localStorage"],
+    "status": "live",
+    "url": "versions/v1-offline/scanner.html",
+    "deployedUrl": "",
+    "note": "可直接用瀏覽器開啟或 USB 拷貝到 PDA"
+  },
+  {
+    "id": "v2-cf-pages",
+    "version": "v2",
+    "title": "多人同步版（Cloudflare）",
+    "description": "多台 PDA 同時掃描即時同步，支援每件貨品拍照，當日紀錄辦公室即時查看。",
+    "stack": ["Cloudflare Pages", "Cloudflare Workers", "D1 (SQLite)", "R2"],
+    "status": "planned",
+    "url": "",
+    "deployedUrl": "",
+    "note": ""
+  },
+  {
+    "id": "v3-api",
+    "version": "v3",
+    "title": "API 整合版",
+    "description": "提供 RESTful API 供 ERP/WMS 等外部系統直接整合。",
+    "stack": ["Cloudflare Workers", "D1", "API Key Auth"],
+    "status": "planned",
+    "url": "",
+    "deployedUrl": "",
+    "note": ""
+  }
+]

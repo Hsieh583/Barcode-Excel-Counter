@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>條碼掃描出貨記錄</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f2f5;
+      color: #222;
+      min-height: 100vh;
+    }
+
+    /* ── 頂部 ── */
+    header {
+      background: #1a56db;
+      color: #fff;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 6px rgba(0,0,0,.3);
+    }
+    header h1 { font-size: 1.1rem; }
+    #badge {
+      background: #fbbf24;
+      color: #1e1e1e;
+      font-weight: bold;
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-size: .85rem;
+    }
+
+    /* ── 主內容 ── */
+    main { padding: 12px; display: flex; flex-direction: column; gap: 12px; max-width: 900px; margin: 0 auto; }
+
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.12);
+    }
+    .card-title {
+      font-size: .75rem;
+      font-weight: bold;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: 10px;
+    }
+
+    /* ── 掃描區 ── */
+    #scanInput {
+      width: 100%;
+      font-size: 1.8rem;
+      font-family: monospace;
+      padding: 10px 14px;
+      border: 3px solid #1a56db;
+      border-radius: 8px;
+      outline: none;
+      background: #eff6ff;
+      color: #1e40af;
+      letter-spacing: .1em;
+      transition: border-color .2s;
+    }
+    #scanInput:focus { border-color: #1d4ed8; background: #dbeafe; }
+    #scanHint { font-size: .8rem; color: #9ca3af; margin-top: 6px; }
+
+    /* ── 品號 + 數量 ── */
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: .8rem; color: #6b7280; font-weight: bold; }
+    .field input, .field select {
+      padding: 8px 10px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-family: monospace;
+    }
+    .field input:focus, .field select:focus { border-color: #1a56db; outline: none; }
+    #pinghaoInput { width: 130px; text-transform: uppercase; }
+    #qtyInput { width: 80px; }
+
+    /* ── 最新掃描 flash ── */
+    #lastScan {
+      font-size: 1rem;
+      color: #059669;
+      font-family: monospace;
+      min-height: 1.4em;
+      font-weight: bold;
+      transition: opacity .5s;
+    }
+
+    /* ── 記錄列表 ── */
+    .table-wrap { overflow-x: auto; max-height: 340px; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    th {
+      background: #f3f4f6;
+      padding: 6px 10px;
+      text-align: left;
+      font-size: .75rem;
+      color: #6b7280;
+      position: sticky;
+      top: 0;
+    }
+    td { padding: 6px 10px; border-bottom: 1px solid #f3f4f6; font-family: monospace; }
+    tr:last-child td { border-bottom: none; }
+    tr.new-row { animation: flash .6s ease; }
+    @keyframes flash {
+      0%   { background: #bbf7d0; }
+      100% { background: transparent; }
+    }
+    .del-btn {
+      background: none;
+      border: none;
+      color: #ef4444;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 0 4px;
+    }
+
+    /* ── 統計 ── */
+    #summaryTable td:last-child { text-align: right; font-weight: bold; }
+    #totalRow td { font-weight: bold; background: #f9fafb; }
+
+    /* ── 按鈕群 ── */
+    .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    button.btn {
+      padding: 10px 18px;
+      border: none;
+      border-radius: 8px;
+      font-size: .95rem;
+      cursor: pointer;
+      font-weight: bold;
+      transition: opacity .15s;
+    }
+    button.btn:active { opacity: .75; }
+    .btn-export { background: #059669; color: #fff; }
+    .btn-copy   { background: #1a56db; color: #fff; }
+    .btn-clear  { background: #ef4444; color: #fff; }
+
+    /* ── 狀態欄 ── */
+    #statusBar {
+      font-size: .8rem;
+      color: #6b7280;
+      text-align: center;
+      padding-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>條碼掃描出貨記錄</h1>
+  <span id="badge">0 筆</span>
+</header>
+
+<main>
+
+  <!-- 掃描輸入 -->
+  <div class="card">
+    <div class="card-title">掃描條碼</div>
+    <input id="scanInput" type="text" inputmode="numeric"
+           placeholder="請掃描或輸入條碼…" autocomplete="off" autocorrect="off" spellcheck="false">
+    <div id="scanHint">掃描槍按 Enter 後自動加入 ／ 手動輸入後按 Enter</div>
+  </div>
+
+  <!-- 品號 + 數量 + 最新提示 -->
+  <div class="card">
+    <div class="card-title">目前設定</div>
+    <div class="row" style="align-items:flex-end;">
+      <div class="field">
+        <label>品號（品項代碼）</label>
+        <input id="pinghaoInput" type="text" placeholder="A00016" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>數量</label>
+        <input id="qtyInput" type="number" value="1" min="1" max="999">
+      </div>
+    </div>
+    <div id="lastScan" style="margin-top:10px;">—</div>
+  </div>
+
+  <!-- 記錄 -->
+  <div class="card">
+    <div class="card-title">掃描記錄</div>
+    <div class="table-wrap">
+      <table id="recordTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>時間</th>
+            <th>條碼</th>
+            <th>品號</th>
+            <th>數量</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="recordBody">
+          <tr id="emptyRow">
+            <td colspan="6" style="text-align:center;color:#9ca3af;padding:20px;">尚無記錄</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 品號統計 -->
+  <div class="card">
+    <div class="card-title">品號統計</div>
+    <div class="table-wrap">
+      <table id="summaryTable">
+        <thead>
+          <tr>
+            <th>品號</th>
+            <th>筆數</th>
+            <th style="text-align:right;">總數量</th>
+          </tr>
+        </thead>
+        <tbody id="summaryBody">
+          <tr><td colspan="3" style="color:#9ca3af;padding:10px;">—</td></tr>
+        </tbody>
+        <tfoot>
+          <tr id="totalRow" style="display:none;">
+            <td>合計</td>
+            <td id="totalCount">0</td>
+            <td id="totalQty" style="text-align:right;">0</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- 操作按鈕 -->
+  <div class="card">
+    <div class="card-title">匯出 / 操作</div>
+    <div class="btn-group">
+      <button class="btn btn-export" onclick="exportExcel()">下載 Excel (.xlsx)</button>
+      <button class="btn btn-copy"   onclick="copyTSV()">複製（貼到 Excel）</button>
+      <button class="btn btn-clear"  onclick="clearAll()">清除全部記錄</button>
+    </div>
+  </div>
+
+  <div id="statusBar">資料儲存於本機瀏覽器，重新整理不會遺失</div>
+
+</main>
+
+<script>
+// ── 資料 ──────────────────────────────────────────
+const STORAGE_KEY = 'barcode_records';
+let records = [];
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    records = raw ? JSON.parse(raw) : [];
+  } catch { records = []; }
+}
+
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+}
+
+// ── UI 更新 ───────────────────────────────────────
+function render() {
+  const tbody = document.getElementById('recordBody');
+  const empty = document.getElementById('emptyRow');
+
+  // 清除非 empty 列
+  [...tbody.querySelectorAll('tr:not(#emptyRow)')].forEach(r => r.remove());
+
+  if (records.length === 0) {
+    empty.style.display = '';
+    document.getElementById('badge').textContent = '0 筆';
+    renderSummary();
+    return;
+  }
+
+  empty.style.display = 'none';
+  document.getElementById('badge').textContent = records.length + ' 筆';
+
+  // 倒序顯示（最新在上）
+  [...records].reverse().forEach((r, revIdx) => {
+    const idx = records.length - 1 - revIdx; // 原始 index
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${idx + 1}</td>
+      <td>${r.time}</td>
+      <td>${r.barcode}</td>
+      <td>${r.pinghao}</td>
+      <td>${r.qty}</td>
+      <td><button class="del-btn" onclick="deleteRow(${idx})" title="刪除">✕</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  renderSummary();
+}
+
+function flashNewRow() {
+  const tbody = document.getElementById('recordBody');
+  const first = tbody.querySelector('tr:not(#emptyRow)');
+  if (first) { first.classList.add('new-row'); setTimeout(() => first.classList.remove('new-row'), 700); }
+}
+
+function renderSummary() {
+  const tbody = document.getElementById('summaryBody');
+  tbody.innerHTML = '';
+
+  if (records.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:#9ca3af;padding:10px;">—</td></tr>';
+    document.getElementById('totalRow').style.display = 'none';
+    return;
+  }
+
+  // 統計
+  const map = {};
+  records.forEach(r => {
+    if (!map[r.pinghao]) map[r.pinghao] = { count: 0, qty: 0 };
+    map[r.pinghao].count++;
+    map[r.pinghao].qty += r.qty;
+  });
+
+  let totalCount = 0, totalQty = 0;
+  Object.keys(map).sort().forEach(ph => {
+    const { count, qty } = map[ph];
+    totalCount += count;
+    totalQty   += qty;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${ph}</td><td>${count}</td><td style="text-align:right;">${qty}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('totalRow').style.display = '';
+  document.getElementById('totalCount').textContent = totalCount;
+  document.getElementById('totalQty').textContent   = totalQty;
+}
+
+// ── 掃描捕捉 ─────────────────────────────────────
+const scanInput   = document.getElementById('scanInput');
+const pinghaoInput = document.getElementById('pinghaoInput');
+const qtyInput    = document.getElementById('qtyInput');
+const lastScan    = document.getElementById('lastScan');
+
+// 始終保持掃描框 focus（點其他地方仍回來）
+document.addEventListener('click', e => {
+  if (!['pinghaoInput','qtyInput'].includes(e.target.id)) {
+    scanInput.focus();
+  }
+});
+
+scanInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    processInput(scanInput.value.trim());
+    scanInput.value = '';
+  }
+});
+
+// 全域掃描：當焦點不在其他 input 時，字符自動流入 scanInput
+document.addEventListener('keydown', e => {
+  if (document.activeElement !== pinghaoInput && document.activeElement !== qtyInput) {
+    scanInput.focus();
+  }
+});
+
+function processInput(raw) {
+  if (!raw) return;
+
+  const pinghao = pinghaoInput.value.trim().toUpperCase() || '(未設定)';
+  const qty     = parseInt(qtyInput.value) || 1;
+  const now     = new Date();
+  const time    = [now.getHours(), now.getMinutes(), now.getSeconds()]
+                    .map(n => String(n).padStart(2,'0')).join(':');
+
+  records.push({ barcode: raw, pinghao, qty, time });
+  save();
+  render();
+  flashNewRow();
+
+  lastScan.textContent = `✓ ${raw} ／ ${pinghao} × ${qty}`;
+  lastScan.style.opacity = '1';
+  setTimeout(() => { lastScan.style.opacity = '.5'; }, 2000);
+}
+
+// ── 刪除單筆 ─────────────────────────────────────
+function deleteRow(idx) {
+  records.splice(idx, 1);
+  save();
+  render();
+  scanInput.focus();
+}
+
+// ── 清除全部 ─────────────────────────────────────
+function clearAll() {
+  if (!confirm(`確定清除全部 ${records.length} 筆記錄？此操作無法復原。`)) return;
+  records = [];
+  save();
+  render();
+  lastScan.textContent = '—';
+  scanInput.focus();
+}
+
+// ── 匯出 Excel ───────────────────────────────────
+function exportExcel() {
+  if (records.length === 0) { alert('尚無記錄可匯出'); return; }
+
+  const ws_data = records.map(r => [r.barcode, r.pinghao, r.qty]);
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+
+  // 欄位寬度
+  ws['!cols'] = [{ wch: 18 }, { wch: 10 }, { wch: 8 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '工作表1');
+
+  const today = new Date();
+  const yy    = today.getFullYear() - 1911; // 民國年
+  const mm    = String(today.getMonth() + 1).padStart(2, '0');
+  const dd    = String(today.getDate()).padStart(2, '0');
+  const fname = `出貨件數_${yy}.${mm}.${dd}.xlsx`;
+
+  XLSX.writeFile(wb, fname);
+}
+
+// ── 複製 TSV（可直接貼到 Excel）────────────────
+function copyTSV() {
+  if (records.length === 0) { alert('尚無記錄可複製'); return; }
+  const tsv = records.map(r => `${r.barcode}\t${r.pinghao}\t${r.qty}`).join('\n');
+  navigator.clipboard.writeText(tsv).then(() => {
+    alert(`已複製 ${records.length} 筆到剪貼簿，可直接貼到 Excel`);
+  }).catch(() => {
+    // fallback
+    const ta = document.createElement('textarea');
+    ta.value = tsv;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    alert(`已複製 ${records.length} 筆到剪貼簿`);
+  });
+}
+
+// ── 初始化 ───────────────────────────────────────
+load();
+render();
+scanInput.focus();
+</script>
+</body>
+</html>
